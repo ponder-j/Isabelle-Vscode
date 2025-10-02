@@ -1,4 +1,5 @@
 .vscode/**
+!.vscode/isabelle.code-snippets
 .vscode-test/**
 out/test/**
 test/**

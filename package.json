@@ -171,12 +171,12 @@
             }
         ],
         "configurationDefaults": {
-          "[isabelle]": {
-            "files.encoding": "utf8isabelle"
-          },
-          "[isabelle-ml]": {
-            "files.encoding": "utf8isabelle"
-          }
+            "[isabelle]": {
+                "files.encoding": "utf8isabelle"
+            },
+            "[isabelle-ml]": {
+                "files.encoding": "utf8isabelle"
+            }
         },
         "grammars": [
             {
@@ -319,6 +319,7 @@
         "typescript": "^5.0.0"
     },
     "dependencies": {
+        "compile": "^0.0.2",
         "vscode-languageclient": "^9.0.0",
         "vscode-languageserver-types": "^3.17.0"
     }

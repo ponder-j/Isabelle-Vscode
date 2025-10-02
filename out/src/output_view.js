@@ -45,13 +45,15 @@ const decorations_1 = require("./decorations");
 const vscode_lib = __importStar(require("./vscode_lib"));
 const path = __importStar(require("path"));
 const lsp = __importStar(require("./lsp"));
+const symbol_converter_1 = require("./symbol_converter");
 class Output_View_Provider {
     constructor(_extension_uri, _language_client) {
         this._extension_uri = _extension_uri;
         this._language_client = _language_client;
         this.content = '';
+        this.symbolConverter = new symbol_converter_1.SymbolConverter(this._extension_uri.fsPath);
     }
-    resolveWebviewView(view, context, _token) {
+    async resolveWebviewView(view, context, _token) {
         this._view = view;
         view.webview.options = {
             // Allow scripts in the webview
@@ -60,7 +62,9 @@ class Output_View_Provider {
                 this._extension_uri
             ]
         };
-        view.webview.html = this._get_html(this.content);
+        // Convert symbols in initial content if any
+        const convertedContent = await this.symbolConverter.convertSymbols(this.content);
+        view.webview.html = this._get_html(convertedContent);
         view.webview.onDidReceiveMessage(async (message) => {
             switch (message.command) {
                 case "open":
@@ -72,12 +76,14 @@ class Output_View_Provider {
             }
         });
     }
-    update_content(content) {
+    async update_content(content) {
+        // Convert Isabelle symbols to Unicode
+        const convertedContent = await this.symbolConverter.convertSymbols(content);
         if (!this._view) {
-            this.content = content;
+            this.content = convertedContent;
             return;
         }
-        this._view.webview.html = this._get_html(content);
+        this._view.webview.html = this._get_html(convertedContent);
     }
     _get_html(content) {
         if (this._view?.webview) {

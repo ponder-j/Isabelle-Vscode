@@ -11,7 +11,8 @@ import { text_colors } from './decorations'
 import * as vscode_lib from './vscode_lib'
 import * as path from 'path'
 import * as lsp from './lsp'
-import { LanguageClient } from 'vscode-languageclient/node';
+import { LanguageClient } from 'vscode-languageclient/node'
+import { SymbolConverter } from './symbol_converter'
 
 
 class Output_View_Provider implements WebviewViewProvider
@@ -21,13 +22,16 @@ class Output_View_Provider implements WebviewViewProvider
 
   private _view?: WebviewView
   private content: string = ''
+  private symbolConverter: SymbolConverter
 
   constructor(
     private readonly _extension_uri: Uri,
     private readonly _language_client: LanguageClient
-  ) { }
+  ) {
+    this.symbolConverter = new SymbolConverter(this._extension_uri.fsPath)
+  }
 
-  public resolveWebviewView(
+  public async resolveWebviewView(
     view: WebviewView,
     context: WebviewViewResolveContext,
     _token: CancellationToken)
@@ -43,7 +47,9 @@ class Output_View_Provider implements WebviewViewProvider
       ]
     }
 
-    view.webview.html = this._get_html(this.content)
+    // Convert symbols in initial content if any
+    const convertedContent = await this.symbolConverter.convertSymbols(this.content)
+    view.webview.html = this._get_html(convertedContent)
     view.webview.onDidReceiveMessage(async message =>
     {
       switch (message.command) {
@@ -58,14 +64,17 @@ class Output_View_Provider implements WebviewViewProvider
     })
   }
 
-  public update_content(content: string)
+  public async update_content(content: string)
   {
+    // Convert Isabelle symbols to Unicode
+    const convertedContent = await this.symbolConverter.convertSymbols(content)
+
     if (!this._view) {
-      this.content = content
+      this.content = convertedContent
       return
     }
 
-    this._view.webview.html = this._get_html(content)
+    this._view.webview.html = this._get_html(convertedContent)
   }
 
   private _get_html(content: string): string

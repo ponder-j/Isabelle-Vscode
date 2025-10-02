@@ -171,7 +171,7 @@ async function activate(context) {
         const provider = new output_view_1.Output_View_Provider(context.extensionUri, language_client);
         context.subscriptions.push(vscode_1.window.registerWebviewViewProvider(output_view_1.Output_View_Provider.view_type, provider));
         language_client.start().then(() => {
-            language_client.onNotification(lsp.dynamic_output_type, params => provider.update_content(params.content));
+            language_client.onNotification(lsp.dynamic_output_type, async (params) => await provider.update_content(params.content));
         });
         /* state panel */
         context.subscriptions.push(vscode_1.commands.registerCommand("isabelle.state", uri => state_panel.init(uri)));

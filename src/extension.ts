@@ -204,7 +204,7 @@ export async function activate(context: ExtensionContext)
     language_client.start().then(() =>
     {
       language_client.onNotification(lsp.dynamic_output_type,
-        params => provider.update_content(params.content))
+        async params => await provider.update_content(params.content))
     })
 
 
