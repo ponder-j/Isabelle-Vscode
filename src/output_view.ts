@@ -104,6 +104,9 @@ function get_webview_html(content: string, webview: Webview, extension_path: str
   const font_uri =
     webview.asWebviewUri(Uri.file(path.join(extension_path, 'fonts', 'IsabelleDejaVuSansMono.ttf')))
 
+  // Ensure content is wrapped in <pre> tag for proper whitespace handling
+  const wrappedContent = content.trim().startsWith('<pre') ? content : `<pre>${content}</pre>`
+
   return `<!DOCTYPE html>
     <html lang='en'>
       <head>
@@ -120,7 +123,7 @@ function get_webview_html(content: string, webview: Webview, extension_path: str
         <title>Output</title>
       </head>
       <body>
-        ${content}
+        ${wrappedContent}
         <script src='${script_uri}'></script>
       </body>
     </html>`
