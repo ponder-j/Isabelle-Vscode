@@ -67,7 +67,8 @@ class Output_View_Provider {
         // Convert symbols in initial content if any
         const convertedContent = await this.symbolConverter.convertSymbols(this.content);
         const convertedProofState = await this.symbolConverter.convertSymbols(this.proofState);
-        view.webview.html = this._get_html(convertedContent, convertedProofState);
+        const { normalProofState, autoProofState } = this.splitProofState(convertedProofState);
+        view.webview.html = this._get_html(convertedContent, normalProofState, autoProofState);
         view.webview.onDidReceiveMessage(async (message) => {
             switch (message.command) {
                 case "open":
@@ -80,50 +81,108 @@ class Output_View_Provider {
         });
     }
     async update_content(content) {
-        // If content is empty or only whitespace, clear proof state
-        if (!content || content.trim().length === 0) {
-            await this.clear_proof_state();
-            return;
-        }
-        // Extract different types of content
-        const { mainContent, proofState, errorContent } = this.extractContentTypes(content);
+        console.log('=== update_content called ===');
+        console.log('Raw content:', content);
+        // Extract main content and proof state from the raw content
+        const { mainContent, proofState } = this.extractContentAndProofState(content);
+        console.log('Extracted main content:', mainContent);
+        console.log('Extracted proof state:', proofState);
         // Convert Isabelle symbols to Unicode
         const convertedContent = await this.symbolConverter.convertSymbols(mainContent);
-        const convertedErrorContent = errorContent ? await this.symbolConverter.convertSymbols(errorContent) : '';
-        // Update proof state based on current content
-        let convertedProofState = '';
-        if (proofState) {
-            convertedProofState = await this.symbolConverter.convertSymbols(proofState);
-            this.lastProofStateTime = Date.now();
-        }
-        // If no proof state in current content, don't update timestamp but clear proof state
+        const convertedProofState = await this.symbolConverter.convertSymbols(proofState);
+        // Split proof state into normal and auto sections
+        const { normalProofState, autoProofState } = this.splitProofState(convertedProofState);
+        console.log('Normal proof state:', normalProofState);
+        console.log('Auto proof state:', autoProofState);
         if (!this._view) {
             this.content = convertedContent;
-            this.proofState = convertedProofState; // This will be empty if no proof state found
-            return;
-        }
-        this.proofState = convertedProofState; // Always update to current content's proof state (may be empty)
-        this._view.webview.html = this._get_html(convertedContent, convertedProofState, convertedErrorContent);
-    }
-    async update_proof_state(stateContent) {
-        // Convert Isabelle symbols to Unicode
-        const convertedProofState = await this.symbolConverter.convertSymbols(stateContent);
-        if (!this._view) {
             this.proofState = convertedProofState;
             return;
         }
-        const convertedContent = await this.symbolConverter.convertSymbols(this.content);
-        this._view.webview.html = this._get_html(convertedContent, convertedProofState, '');
+        this.content = convertedContent;
         this.proofState = convertedProofState;
+        if (convertedProofState) {
+            this.lastProofStateTime = Date.now();
+        }
+        this._view.webview.html = this._get_html(convertedContent, normalProofState, autoProofState);
     }
-    async clear_proof_state() {
+    async update_proof_state(stateContent) {
+        console.log('=== update_proof_state called ===');
+        console.log('Raw stateContent:', stateContent);
+        // Convert Isabelle symbols to Unicode
+        const convertedProofState = await this.symbolConverter.convertSymbols(stateContent);
+        console.log('Converted proof state:', convertedProofState);
+        // Split proof state into normal and automation sections
+        const { normalProofState, autoProofState } = this.splitProofState(convertedProofState);
+        console.log('Normal proof state:', normalProofState);
+        console.log('Auto proof state:', autoProofState);
+        this.proofState = convertedProofState;
+        this.lastProofStateTime = Date.now();
         if (!this._view) {
-            this.proofState = '';
+            console.log('No view available');
             return;
         }
-        const convertedContent = await this.symbolConverter.convertSymbols(this.content);
-        this._view.webview.html = this._get_html(convertedContent, '', '');
+        this._view.webview.html = this._get_html(this.content, normalProofState, autoProofState);
+        console.log('=== HTML updated ===');
+    }
+    extractContentAndProofState(rawContent) {
+        if (!rawContent || rawContent.trim().length === 0) {
+            return { mainContent: '', proofState: '' };
+        }
+        const lines = rawContent.split('\n');
+        let proofStateStartIndex = -1;
+        // Find the start of proof state (look for "proof (prove)" or "goal (")
+        for (let i = 0; i < lines.length; i++) {
+            const trimmedLine = lines[i].trim();
+            if (trimmedLine.startsWith('proof (prove)') || trimmedLine.startsWith('goal (')) {
+                proofStateStartIndex = i;
+                break;
+            }
+        }
+        // If no proof state found, return all as main content
+        if (proofStateStartIndex === -1) {
+            return { mainContent: rawContent, proofState: '' };
+        }
+        // Split into main content and proof state
+        const mainLines = lines.slice(0, proofStateStartIndex);
+        const proofLines = lines.slice(proofStateStartIndex);
+        return {
+            mainContent: mainLines.join('\n').trim(),
+            proofState: proofLines.join('\n').trim()
+        };
+    }
+    splitProofState(proofState) {
+        if (!proofState) {
+            return { normalProofState: '', autoProofState: '' };
+        }
+        const lines = proofState.split('\n');
+        let autoStartIndex = -1;
+        // Find the first line that starts with "Auto"
+        for (let i = 0; i < lines.length; i++) {
+            const trimmedLine = lines[i].trim();
+            if (trimmedLine.startsWith('Auto')) {
+                autoStartIndex = i;
+                break;
+            }
+        }
+        // If no "Auto" line found, return all as normal proof state
+        if (autoStartIndex === -1) {
+            return { normalProofState: proofState, autoProofState: '' };
+        }
+        // Split into normal and auto sections
+        const normalLines = lines.slice(0, autoStartIndex);
+        const autoLines = lines.slice(autoStartIndex);
+        return {
+            normalProofState: normalLines.join('\n').trim(),
+            autoProofState: autoLines.join('\n').trim()
+        };
+    }
+    async clear_proof_state() {
         this.proofState = '';
+        if (!this._view) {
+            return;
+        }
+        this._view.webview.html = this._get_html(this.content, '');
     }
     async check_and_clear_old_proof_state(maxAgeMs = 2000) {
         if (this.proofState && this.lastProofStateTime > 0) {
@@ -133,74 +192,9 @@ class Output_View_Provider {
             }
         }
     }
-    extractContentTypes(content) {
-        console.log('=== DEBUG: Extracting content types ===');
-        console.log('Input content:', content);
-        const lines = content.split('\n');
-        const mainLines = [];
-        const proofLines = [];
-        const errorLines = [];
-        let currentSection = 'main';
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            const trimmedLine = line.trim();
-            console.log(`Line ${i}: "${line}" -> Section: ${currentSection}`);
-            // Detect proof state
-            if (trimmedLine.includes('proof (prove)') ||
-                trimmedLine.includes('goal (') ||
-                trimmedLine.includes('subgoal') ||
-                /^\d+\.\s+[A-Z⟶∀∃⇒⟵⟷∧∨¬λ]/u.test(trimmedLine)) {
-                currentSection = 'proof';
-                proofLines.push(line);
-                console.log(`  -> Detected proof state, switched to proof section`);
-                continue;
-            }
-            // Detect error messages
-            if (trimmedLine.includes('*** ') ||
-                trimmedLine.includes('Error:') ||
-                trimmedLine.includes('Failed') ||
-                trimmedLine.includes('exception') ||
-                trimmedLine.includes('Type unification failed') ||
-                trimmedLine.includes('Bad context') ||
-                trimmedLine.includes('using reset state') ||
-                trimmedLine.includes('Bad fixed variable') ||
-                trimmedLine.includes('Duplicate') ||
-                trimmedLine.includes('Unknown') ||
-                trimmedLine.includes('Undefined') ||
-                /^At command/.test(trimmedLine)) {
-                currentSection = 'error';
-                errorLines.push(line);
-                console.log(`  -> Detected error, switched to error section`);
-                continue;
-            }
-            // Continue current section or default to main
-            if (currentSection === 'proof' && (trimmedLine === '' || /^\s*\d+\./.test(trimmedLine) || trimmedLine.includes('⟶') || trimmedLine.includes('∀') || trimmedLine.includes('∃'))) {
-                proofLines.push(line);
-                console.log(`  -> Continuing proof section`);
-            }
-            else if (currentSection === 'error' && (trimmedLine === '' || trimmedLine.startsWith('  ') || trimmedLine.includes('***'))) {
-                errorLines.push(line);
-                console.log(`  -> Continuing error section`);
-            }
-            else {
-                currentSection = 'main';
-                mainLines.push(line);
-                console.log(`  -> Added to main section`);
-            }
-        }
-        const mainContent = mainLines.join('\n').trim();
-        const proofState = proofLines.length > 0 ? proofLines.join('\n').trim() : null;
-        const errorContent = errorLines.length > 0 ? errorLines.join('\n').trim() : null;
-        console.log('=== DEBUG: Results ===');
-        console.log('Main content:', mainContent);
-        console.log('Proof state:', proofState);
-        console.log('Error content:', errorContent);
-        console.log('=== DEBUG: End ===');
-        return { mainContent, proofState, errorContent };
-    }
-    _get_html(content, proofState = '', errorContent = '') {
+    _get_html(content, normalProofState = '', autoProofState = '') {
         if (this._view?.webview) {
-            return get_webview_html(content, proofState, errorContent, this._view.webview, this._extension_uri.fsPath);
+            return get_webview_html(content, normalProofState, autoProofState, this._view.webview, this._extension_uri.fsPath);
         }
         return "";
     }
@@ -216,7 +210,7 @@ function open_webview_link(link) {
         selection: new vscode_1.Selection(pos, pos)
     });
 }
-function get_webview_html(content, proofState, errorContent, webview, extension_path) {
+function get_webview_html(content, normalProofState, autoProofState, webview, extension_path) {
     const script_uri = webview.asWebviewUri(vscode_1.Uri.file(path.join(extension_path, 'media', 'main.js')));
     const css_uri = webview.asWebviewUri(vscode_1.Uri.file(path.join(extension_path, 'media', 'vscode.css')));
     const font_uri = webview.asWebviewUri(vscode_1.Uri.file(path.join(extension_path, 'fonts', 'IsabelleDejaVuSansMono.ttf')));
@@ -225,15 +219,15 @@ function get_webview_html(content, proofState, errorContent, webview, extension_
     <div class="content-section main-content">
       ${content.trim().startsWith('<pre') ? content : `<pre>${content}</pre>`}
     </div>` : '';
-    // Prepare proof state section
-    const proofSection = proofState ? `
-    <div class="content-section proof-state">
-      ${proofState.trim().startsWith('<pre') ? proofState : `<pre>${proofState}</pre>`}
+    // Prepare normal proof state section (green background)
+    const normalProofSection = normalProofState ? `
+    <div class="content-section proof-state-normal">
+      ${normalProofState.trim().startsWith('<pre') ? normalProofState : `<pre>${normalProofState}</pre>`}
     </div>` : '';
-    // Prepare error content section
-    const errorSection = errorContent ? `
-    <div class="content-section error-content">
-      ${errorContent.trim().startsWith('<pre') ? errorContent : `<pre>${errorContent}</pre>`}
+    // Prepare auto proof state section (blue background)
+    const autoProofSection = autoProofState ? `
+    <div class="content-section proof-state-auto">
+      ${autoProofState.trim().startsWith('<pre') ? autoProofState : `<pre>${autoProofState}</pre>`}
     </div>` : '';
     return `<!DOCTYPE html>
     <html lang='en'>
@@ -258,14 +252,14 @@ function get_webview_html(content, proofState, errorContent, webview, extension_
               background-color: transparent;
             }
 
-            .proof-state {
+            .proof-state-normal {
               background-color: rgba(0, 128, 0, 0.1);
               border-left: 4px solid rgba(0, 128, 0, 0.6);
             }
 
-            .error-content {
-              background-color: rgba(255, 0, 0, 0.1);
-              border-left: 4px solid rgba(255, 0, 0, 0.6);
+            .proof-state-auto {
+              background-color: rgba(0, 128, 255, 0.1);
+              border-left: 4px solid rgba(0, 128, 255, 0.6);
             }
 
             .content-section pre {
@@ -276,22 +270,22 @@ function get_webview_html(content, proofState, errorContent, webview, extension_
             }
 
             /* Dark theme adjustments */
-            body.vscode-dark .proof-state {
+            body.vscode-dark .proof-state-normal {
               background-color: rgba(0, 255, 0, 0.08);
               border-left-color: rgba(0, 255, 0, 0.4);
             }
 
-            body.vscode-dark .error-content {
-              background-color: rgba(255, 100, 100, 0.08);
-              border-left-color: rgba(255, 100, 100, 0.4);
+            body.vscode-dark .proof-state-auto {
+              background-color: rgba(100, 150, 255, 0.08);
+              border-left-color: rgba(100, 150, 255, 0.4);
             }
         </style>
         <title>Output</title>
       </head>
       <body>
         ${mainSection}
-        ${proofSection}
-        ${errorSection}
+        ${normalProofSection}
+        ${autoProofSection}
         <script src='${script_uri}'></script>
       </body>
     </html>`;
