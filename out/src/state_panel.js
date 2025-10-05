@@ -98,7 +98,7 @@ class Panel {
       <button id="locate_button">Locate</button>
     </div>
     ${content}`;
-        return (0, output_view_1.get_webview_html)(content_with_buttons, '', '', webview, this._extension_path);
+        return (0, output_view_1.get_webview_html)(content_with_buttons, '', '', '', webview, this._extension_path);
     }
 }
 let panel = null;

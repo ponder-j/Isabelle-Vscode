@@ -87,7 +87,7 @@ class Panel
     </div>
     ${content}`
 
-    return get_webview_html(content_with_buttons, '', '', webview, this._extension_path)
+    return get_webview_html(content_with_buttons, '', '', '', webview, this._extension_path)
   }
 }
 
