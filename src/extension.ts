@@ -20,7 +20,7 @@ import { Uri, TextEditor, ViewColumn, Selection, Position, ExtensionContext, wor
 import { LanguageClient, LanguageClientOptions, ServerOptions } from 'vscode-languageclient/node'
 import { Output_View_Provider } from './output_view'
 import { register_script_decorations } from './script_decorations'
-import { TypeSignatureCompletionProvider, FunctionBodyCompletionProvider } from './function_completion'
+import { TypeSignatureCompletionProvider, FunctionBodyCompletionProvider, TheoryStructureCompletionProvider, ProofOutlineCompletionProvider } from './function_completion'
 
 
 let last_caret_update: lsp.Caret_Update = {}
@@ -246,13 +246,26 @@ export async function activate(context: ExtensionContext)
     /* dynamic output */
 
     const provider = new Output_View_Provider(context.extensionUri, language_client)
+    const proofOutlineProvider = new ProofOutlineCompletionProvider();
+
     context.subscriptions.push(
       window.registerWebviewViewProvider(Output_View_Provider.view_type, provider))
 
     language_client.start().then(() =>
     {
       language_client.onNotification(lsp.dynamic_output_type,
-        async params => await provider.update_content(params.content))
+        async params => {
+          await provider.update_content(params.content);
+
+          // Extract proof outline if present
+          const content = params.content;
+          if (content && content.includes('Proof outline with cases:')) {
+            const match = content.match(/Proof outline with cases:\s*([\s\S]*?)(?=\n\n|\n*$)/);
+            if (match && match[1]) {
+              proofOutlineProvider.updateProofOutline(match[1].trim());
+            }
+          }
+        })
 
       language_client.onNotification(lsp.state_output_type,
         async params => await provider.update_proof_state(params.content))
@@ -288,6 +301,7 @@ export async function activate(context: ExtensionContext)
     /* function definition completion */
 
     const functionBodyProvider = new FunctionBodyCompletionProvider();
+    const theoryStructureProvider = new TheoryStructureCompletionProvider();
 
     context.subscriptions.push(
       languages.registerCompletionItemProvider(
@@ -305,6 +319,26 @@ export async function activate(context: ExtensionContext)
       languages.registerCompletionItemProvider(
         { scheme: 'file', language: 'isabelle' },
         functionBodyProvider
+      ),
+      // Theory structure completion (theory -> imports -> begin)
+      languages.registerCompletionItemProvider(
+        { scheme: 'file', language: 'isabelle' },
+        theoryStructureProvider,
+        '\n', 't', 'T', ' '  // Trigger on newline, 't', 'T', and space
+      ),
+      languages.registerCompletionItemProvider(
+        { scheme: 'file', language: 'isabelle' },
+        theoryStructureProvider
+      ),
+      // Proof outline completion (from Isabelle output)
+      languages.registerCompletionItemProvider(
+        { scheme: 'file', language: 'isabelle' },
+        proofOutlineProvider,
+        '\n'  // Trigger on newline after proof
+      ),
+      languages.registerCompletionItemProvider(
+        { scheme: 'file', language: 'isabelle' },
+        proofOutlineProvider
       )
     )
 

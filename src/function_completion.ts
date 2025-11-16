@@ -172,3 +172,185 @@ export class FunctionBodyCompletionProvider implements CompletionItemProvider {
     return null;
   }
 }
+
+/**
+ * Completion provider for theory header structure
+ * Handles automatic completion at file start and after 'theory' and 'imports' lines
+ */
+export class TheoryStructureCompletionProvider implements CompletionItemProvider {
+
+  provideCompletionItems(document: TextDocument, position: Position): CompletionItem[] {
+    const currentLineText = document.lineAt(position.line).text;
+    const textBeforeCursor = currentLineText.substring(0, position.character);
+
+    // Don't trigger if current line already has content (not just whitespace)
+    if (textBeforeCursor.trim() !== '') return [];
+
+    // Calculate the range to replace (from start of line to cursor position)
+    const rangeToReplace = new Range(
+      new Position(position.line, 0),
+      position
+    );
+
+    // Case 0: At file beginning - suggest theory header with filename
+    if (this.isFileBeginning(document, position.line)) {
+      const fileName = this.extractFileName(document.uri.fsPath);
+      if (fileName) {
+        const item = new CompletionItem('theory header skeleton', CompletionItemKind.Snippet);
+        // Multi-line snippet with tab stops:
+        // $1 -> after imports
+        // $2 -> inside theory body before end
+        // We replace the leading whitespace the user typed (rangeToReplace covers it)
+        item.insertText = new SnippetString(
+          `theory ${fileName}\n  imports $1\nbegin\n\n$2\n\nend`
+        );
+        item.range = rangeToReplace; // remove any initial spaces the user typed
+        item.detail = `Insert full theory skeleton for ${fileName}`;
+        item.documentation = 'Inserts:\n  theory <name>\n    imports <TAB to fill>\n  begin\n  <TAB to body placeholder>\n  end';
+        item.sortText = '0';
+        return [item];
+      }
+    }
+
+    // For other cases, we need a previous line
+    if (position.line === 0) return [];
+
+    const previousLine = document.lineAt(position.line - 1).text;
+
+    // Case 1: Previous line starts with 'theory' - add 'imports'
+    if (/^\s*theory\s+\w+/.test(previousLine.trim())) {
+      const item = new CompletionItem('imports', CompletionItemKind.Keyword);
+      item.insertText = new SnippetString('  imports $1');
+      item.range = rangeToReplace;
+      item.detail = 'Theory imports section';
+      item.documentation = 'Add imports declaration after theory header';
+      item.sortText = '0';
+      return [item];
+    }
+
+    // Case 2: Previous line starts with 'imports' - add 'begin'
+    if (/^\s*imports\b/.test(previousLine)) {
+      const item = new CompletionItem('begin', CompletionItemKind.Keyword);
+      item.insertText = 'begin';
+      item.range = rangeToReplace;
+      item.detail = 'Begin theory body';
+      item.documentation = 'Start the theory body section';
+      item.sortText = '0';
+      return [item];
+    }
+
+    return [];
+  }
+
+  /**
+   * Check if we're at the beginning of the file (all previous lines are empty or whitespace)
+   */
+  private isFileBeginning(document: TextDocument, currentLine: number): boolean {
+    // If we're on line 0, we're definitely at the beginning
+    if (currentLine === 0) return true;
+
+    // Check if all previous lines are empty or contain only whitespace
+    for (let i = 0; i < currentLine; i++) {
+      if (document.lineAt(i).text.trim() !== '') {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Extract filename without .thy extension from file path
+   */
+  private extractFileName(filePath: string): string | null {
+    // Extract the base name from the path
+    const pathParts = filePath.split('/');
+    const fileName = pathParts[pathParts.length - 1];
+
+    // Remove .thy extension if present
+    if (fileName.endsWith('.thy')) {
+      return fileName.slice(0, -4);
+    }
+
+    return fileName || null;
+  }
+}
+
+/**
+ * Completion provider for proof outlines
+ * Suggests proof structure from "Proof outline with cases:" output
+ */
+export class ProofOutlineCompletionProvider implements CompletionItemProvider {
+  private cachedProofOutline: string | null = null;
+
+  /**
+   * Update the cached proof outline
+   */
+  public updateProofOutline(outline: string | null) {
+    this.cachedProofOutline = outline;
+  }
+
+  provideCompletionItems(document: TextDocument, position: Position): CompletionItem[] {
+    // Only trigger if we have a cached proof outline
+    if (!this.cachedProofOutline) return [];
+
+    const currentLineText = document.lineAt(position.line).text;
+    const textBeforeCursor = currentLineText.substring(0, position.character);
+
+    // Don't trigger if current line already has content (not just whitespace)
+    if (textBeforeCursor.trim() !== '') return [];
+
+    // Check if previous line contains 'proof'
+    if (position.line === 0) return [];
+
+    const previousLine = document.lineAt(position.line - 1).text;
+    if (!/\bproof\b/.test(previousLine)) return [];
+
+    // Get the indentation of the proof line
+    const proofIndent = previousLine.match(/^(\s*)/)?.[1] || '';
+
+    // Calculate the range to replace
+    const rangeToReplace = new Range(
+      new Position(position.line, 0),
+      position
+    );
+
+    // Convert the proof outline to a snippet with proper indentation
+    const snippetText = this.convertToSnippet(this.cachedProofOutline, proofIndent);
+
+    const item = new CompletionItem('Proof outline (from Isabelle)', CompletionItemKind.Snippet);
+    item.insertText = new SnippetString(snippetText);
+    item.range = rangeToReplace;
+    item.detail = 'Insert proof structure from Isabelle';
+    item.documentation = 'Inserts the proof outline suggested by Isabelle, with sorry as tab stops';
+    item.sortText = '0';
+
+    return [item];
+  }
+
+  /**
+   * Convert proof outline to snippet format
+   * Replace each 'sorry' with $1, $2, $3, etc.
+   * Add base indentation (from proof line) to each line
+   * Add two extra spaces to the first line
+   */
+  private convertToSnippet(outline: string, baseIndent: string): string {
+    let tabStopIndex = 1;
+    const withTabStops = outline.replace(/\bsorry\b/g, () => {
+      return `\${${tabStopIndex++}:sorry}`;
+    });
+
+    // Add base indentation to each line
+    const lines = withTabStops.split('\n');
+    const indentedLines = lines.map((line, index) => {
+      if (index === 0) {
+        // First line gets base indent + 2 extra spaces
+        return baseIndent + '  ' + line;
+      } else {
+        // Other lines just get base indent
+        return baseIndent + line;
+      }
+    });
+
+    return indentedLines.join('\n');
+  }
+}

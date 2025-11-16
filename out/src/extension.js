@@ -217,9 +217,20 @@ async function activate(context) {
         });
         /* dynamic output */
         const provider = new output_view_1.Output_View_Provider(context.extensionUri, language_client);
+        const proofOutlineProvider = new function_completion_1.ProofOutlineCompletionProvider();
         context.subscriptions.push(vscode_1.window.registerWebviewViewProvider(output_view_1.Output_View_Provider.view_type, provider));
         language_client.start().then(() => {
-            language_client.onNotification(lsp.dynamic_output_type, async (params) => await provider.update_content(params.content));
+            language_client.onNotification(lsp.dynamic_output_type, async (params) => {
+                await provider.update_content(params.content);
+                // Extract proof outline if present
+                const content = params.content;
+                if (content && content.includes('Proof outline with cases:')) {
+                    const match = content.match(/Proof outline with cases:\s*([\s\S]*?)(?=\n\n|\n*$)/);
+                    if (match && match[1]) {
+                        proofOutlineProvider.updateProofOutline(match[1].trim());
+                    }
+                }
+            });
             language_client.onNotification(lsp.state_output_type, async (params) => await provider.update_proof_state(params.content));
             // Monitor cursor changes to ensure proof state is updated
             context.subscriptions.push(vscode_1.window.onDidChangeTextEditorSelection(async () => {
@@ -237,13 +248,20 @@ async function activate(context) {
         language_client.start().then(() => preview_panel.setup(context, language_client));
         /* function definition completion */
         const functionBodyProvider = new function_completion_1.FunctionBodyCompletionProvider();
+        const theoryStructureProvider = new function_completion_1.TheoryStructureCompletionProvider();
         context.subscriptions.push(vscode_1.languages.registerCompletionItemProvider({ scheme: 'file', language: 'isabelle' }, new function_completion_1.TypeSignatureCompletionProvider(), ' ' // Trigger on space after ::
         ), 
         // Register with newline trigger for automatic completion after line break
         vscode_1.languages.registerCompletionItemProvider({ scheme: 'file', language: 'isabelle' }, functionBodyProvider, '\n' // Trigger on newline
         ), 
         // Register without trigger characters to support manual completion (Ctrl+Space) everywhere including inside strings
-        vscode_1.languages.registerCompletionItemProvider({ scheme: 'file', language: 'isabelle' }, functionBodyProvider));
+        vscode_1.languages.registerCompletionItemProvider({ scheme: 'file', language: 'isabelle' }, functionBodyProvider), 
+        // Theory structure completion (theory -> imports -> begin)
+        vscode_1.languages.registerCompletionItemProvider({ scheme: 'file', language: 'isabelle' }, theoryStructureProvider, '\n', 't', 'T', ' ' // Trigger on newline, 't', 'T', and space
+        ), vscode_1.languages.registerCompletionItemProvider({ scheme: 'file', language: 'isabelle' }, theoryStructureProvider), 
+        // Proof outline completion (from Isabelle output)
+        vscode_1.languages.registerCompletionItemProvider({ scheme: 'file', language: 'isabelle' }, proofOutlineProvider, '\n' // Trigger on newline after proof
+        ), vscode_1.languages.registerCompletionItemProvider({ scheme: 'file', language: 'isabelle' }, proofOutlineProvider));
         /* spell checker */
         language_client.start().then(() => {
             context.subscriptions.push(vscode_1.commands.registerCommand("isabelle.include-word", uri => language_client.sendNotification(lsp.include_word_type)), vscode_1.commands.registerCommand("isabelle.include-word-permanently", uri => language_client.sendNotification(lsp.include_word_permanently_type)), vscode_1.commands.registerCommand("isabelle.exclude-word", uri => language_client.sendNotification(lsp.exclude_word_type)), vscode_1.commands.registerCommand("isabelle.exclude-word-permanently", uri => language_client.sendNotification(lsp.exclude_word_permanently_type)), vscode_1.commands.registerCommand("isabelle.reset-words", uri => language_client.sendNotification(lsp.reset_words_type)));
