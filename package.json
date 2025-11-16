@@ -23,7 +23,9 @@
         "Programming Languages"
     ],
     "activationEvents": [
-        "onStartupFinished"
+        "onLanguage:isabelle",
+        "onLanguage:isabelle-ml",
+        "onLanguage:bibtex"
     ],
     "main": "./out/src/extension",
     "contributes": {
