@@ -216,13 +216,16 @@ async function activate(context) {
             });
             /* dynamic output */
             const provider = new output_view_1.Output_View_Provider(context.extensionUri, language_client);
-            const proofOutlineProvider = new function_completion_1.ProofOutlineCompletionProvider();
+            const proofOutlineProvider = new function_completion_1.ProofOutlineCompletionProvider(context.extensionPath);
+            const proofStateProvider = new function_completion_1.ProofStateCompletionProvider(context.extensionPath);
+            // Set proof outline provider reference to avoid conflicts
+            proofStateProvider.setProofOutlineProvider(proofOutlineProvider);
             context.subscriptions.push(vscode_1.window.registerWebviewViewProvider(output_view_1.Output_View_Provider.view_type, provider));
             language_client.start().then(() => {
                 language_client.onNotification(lsp.dynamic_output_type, async (params) => {
                     await provider.update_content(params.content);
-                    // Extract proof outline if present
                     const content = params.content;
+                    // Extract proof outline if present (priority 1)
                     if (content && content.includes('Proof outline with cases:')) {
                         const match = content.match(/Proof outline with cases:\s*([\s\S]*?)(?=\n\n|\n*$)/);
                         if (match && match[1]) {
@@ -230,8 +233,56 @@ async function activate(context) {
                             proofOutlineProvider.updateProofOutline(match[1].trim(), last_caret_update);
                         }
                     }
+                    // Extract goal for fix/assume completion (priority 2)
+                    // This is also sent via dynamic_output_type, not state_output_type
+                    if (content && content.includes('goal (')) {
+                        console.log('[ProofState] Found goal in dynamic output');
+                        const goalMatch = content.match(/goal\s*\([^)]*\):\s*([\s\S]*?)(?=\n\n|$)/);
+                        console.log('[ProofState] Goal match found:', !!goalMatch);
+                        if (goalMatch && goalMatch[1]) {
+                            const goalContent = goalMatch[1].trim();
+                            console.log('[ProofState] Extracted goal (first 200 chars):', goalContent.substring(0, 200));
+                            console.log('[ProofState] Caret position:', last_caret_update);
+                            // Store goal with current caret position
+                            proofStateProvider.updateGoal(goalContent, last_caret_update);
+                            console.log('[ProofState] Goal cached successfully');
+                        }
+                        else {
+                            console.log('[ProofState] No goal content found after match');
+                        }
+                    }
                 });
-                language_client.onNotification(lsp.state_output_type, async (params) => await provider.update_proof_state(params.content));
+                language_client.onNotification(lsp.state_output_type, async (params) => {
+                    console.log('[ProofState] Received state_output_type notification');
+                    console.log('[ProofState] Content length:', params.content?.length || 0);
+                    await provider.update_proof_state(params.content);
+                    // Always try to extract and cache goal if present
+                    // We don't check the current line here because:
+                    // 1. The user might press Enter right after typing 'case (Suc n)' or 'next', moving the cursor to the next line
+                    // 2. The completion provider will check if the previous line contains 'proof', 'case', or 'next'
+                    if (params.content) {
+                        console.log('[ProofState] Extracting goal from content...');
+                        // Extract the first goal from the state output
+                        const goalMatch = params.content.match(/goal\s*\([^)]*\):\s*([\s\S]*?)(?=\n\n|$)/);
+                        console.log('[ProofState] Goal match found:', !!goalMatch);
+                        if (goalMatch && goalMatch[1]) {
+                            const goalContent = goalMatch[1].trim();
+                            console.log('[ProofState] Extracted goal (first 100 chars):', goalContent.substring(0, 100));
+                            console.log('[ProofState] Caret position:', last_caret_update);
+                            // Store goal with current caret position
+                            proofStateProvider.updateGoal(goalContent, last_caret_update);
+                            console.log('[ProofState] Goal cached successfully');
+                        }
+                        else {
+                            console.log('[ProofState] No goal found in content');
+                            // Clear cache if no goal is present
+                            proofStateProvider.updateGoal(null);
+                        }
+                    }
+                    else {
+                        console.log('[ProofState] No content in params');
+                    }
+                });
                 // Monitor cursor changes to ensure proof state is updated
                 context.subscriptions.push(vscode_1.window.onDidChangeTextEditorSelection(async () => {
                     // Give server time to send updates, then check if proof state should be cleared
@@ -240,6 +291,7 @@ async function activate(context) {
                         // Also clear proof-outline cache if the caret moved away from the proof
                         try {
                             proofOutlineProvider.clearIfCaretMoved(last_caret_update);
+                            proofStateProvider.clearIfCaretMoved(last_caret_update);
                         }
                         catch (e) {
                             // ignore
@@ -268,7 +320,10 @@ async function activate(context) {
             ), vscode_1.languages.registerCompletionItemProvider({ scheme: 'file', language: 'isabelle' }, theoryStructureProvider), 
             // Proof outline completion (from Isabelle output)
             vscode_1.languages.registerCompletionItemProvider({ scheme: 'file', language: 'isabelle' }, proofOutlineProvider, '\n' // Trigger on newline after proof
-            ), vscode_1.languages.registerCompletionItemProvider({ scheme: 'file', language: 'isabelle' }, proofOutlineProvider));
+            ), vscode_1.languages.registerCompletionItemProvider({ scheme: 'file', language: 'isabelle' }, proofOutlineProvider), 
+            // Proof state completion (fix/assume from goal)
+            vscode_1.languages.registerCompletionItemProvider({ scheme: 'file', language: 'isabelle' }, proofStateProvider, '\n' // Trigger on newline after proof/case
+            ), vscode_1.languages.registerCompletionItemProvider({ scheme: 'file', language: 'isabelle' }, proofStateProvider));
             /* spell checker */
             language_client.start().then(() => {
                 context.subscriptions.push(vscode_1.commands.registerCommand("isabelle.include-word", uri => language_client.sendNotification(lsp.include_word_type)), vscode_1.commands.registerCommand("isabelle.include-word-permanently", uri => language_client.sendNotification(lsp.include_word_permanently_type)), vscode_1.commands.registerCommand("isabelle.exclude-word", uri => language_client.sendNotification(lsp.exclude_word_type)), vscode_1.commands.registerCommand("isabelle.exclude-word-permanently", uri => language_client.sendNotification(lsp.exclude_word_permanently_type)), vscode_1.commands.registerCommand("isabelle.reset-words", uri => language_client.sendNotification(lsp.reset_words_type)));
