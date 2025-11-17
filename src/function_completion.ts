@@ -826,3 +826,40 @@ export class ByDedentCompletionProvider implements CompletionItemProvider {
     return [];
   }
 }
+
+/**
+ * Completion provider for 'also have' pattern
+ * When user types 'also ', suggests 'have "… = "' with cursor after '='
+ */
+export class AlsoHaveCompletionProvider implements CompletionItemProvider {
+  provideCompletionItems(document: TextDocument, position: Position): CompletionItem[] {
+    const currentLineText = document.lineAt(position.line).text;
+    const textBeforeCursor = currentLineText.substring(0, position.character);
+    
+    // Check if the line ends with 'also ' (possibly with leading whitespace)
+    const match = textBeforeCursor.match(/^(\s*)also\s$/);
+    
+    if (!match) {
+      return [];
+    }
+    
+    const indent = match[1]; // Capture the indentation
+    
+    // Calculate the range to replace (just the space after 'also')
+    const rangeToReplace = new Range(
+      new Position(position.line, position.character - 1),
+      position
+    );
+    
+    const item = new CompletionItem('have "… = "', CompletionItemKind.Snippet);
+    // Use snippet with tab stop after the '='
+    // $0 is the final cursor position
+    item.insertText = new SnippetString(' have "… = $0"');
+    item.range = rangeToReplace;
+    item.detail = 'Insert have statement for also...have pattern';
+    item.documentation = 'Automatically inserts \'have "… = "\' after typing "also " with cursor positioned after the equals sign';
+    item.sortText = '0'; // Make it appear first
+    
+    return [item];
+  }
+}

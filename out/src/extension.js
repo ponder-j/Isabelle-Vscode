@@ -308,6 +308,8 @@ async function activate(context) {
             /* function definition completion */
             const functionBodyProvider = new function_completion_1.FunctionBodyCompletionProvider();
             const theoryStructureProvider = new function_completion_1.TheoryStructureCompletionProvider();
+            const byDedentProvider = new function_completion_1.ByDedentCompletionProvider();
+            const alsoHaveProvider = new function_completion_1.AlsoHaveCompletionProvider();
             context.subscriptions.push(vscode_1.languages.registerCompletionItemProvider({ scheme: 'file', language: 'isabelle' }, new function_completion_1.TypeSignatureCompletionProvider(), ' ' // Trigger on space after ::
             ), 
             // Register with newline trigger for automatic completion after line break
@@ -323,7 +325,13 @@ async function activate(context) {
             ), vscode_1.languages.registerCompletionItemProvider({ scheme: 'file', language: 'isabelle' }, proofOutlineProvider), 
             // Proof state completion (fix/assume from goal)
             vscode_1.languages.registerCompletionItemProvider({ scheme: 'file', language: 'isabelle' }, proofStateProvider, '\n' // Trigger on newline after proof/case
-            ), vscode_1.languages.registerCompletionItemProvider({ scheme: 'file', language: 'isabelle' }, proofStateProvider));
+            ), vscode_1.languages.registerCompletionItemProvider({ scheme: 'file', language: 'isabelle' }, proofStateProvider), 
+            // By dedent completion (reduce indentation after 'by')
+            vscode_1.languages.registerCompletionItemProvider({ scheme: 'file', language: 'isabelle' }, byDedentProvider, '\n' // Trigger on newline after 'by'
+            ), vscode_1.languages.registerCompletionItemProvider({ scheme: 'file', language: 'isabelle' }, byDedentProvider), 
+            // Also have completion (suggest 'have "… = "' after 'also ')
+            vscode_1.languages.registerCompletionItemProvider({ scheme: 'file', language: 'isabelle' }, alsoHaveProvider, ' ' // Trigger on space after 'also'
+            ));
             /* spell checker */
             language_client.start().then(() => {
                 context.subscriptions.push(vscode_1.commands.registerCommand("isabelle.include-word", uri => language_client.sendNotification(lsp.include_word_type)), vscode_1.commands.registerCommand("isabelle.include-word-permanently", uri => language_client.sendNotification(lsp.include_word_permanently_type)), vscode_1.commands.registerCommand("isabelle.exclude-word", uri => language_client.sendNotification(lsp.exclude_word_type)), vscode_1.commands.registerCommand("isabelle.exclude-word-permanently", uri => language_client.sendNotification(lsp.exclude_word_permanently_type)), vscode_1.commands.registerCommand("isabelle.reset-words", uri => language_client.sendNotification(lsp.reset_words_type)));

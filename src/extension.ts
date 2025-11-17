@@ -20,7 +20,7 @@ import { Uri, TextEditor, ViewColumn, Selection, Position, ExtensionContext, wor
 import { LanguageClient, LanguageClientOptions, ServerOptions } from 'vscode-languageclient/node'
 import { Output_View_Provider } from './output_view'
 import { register_script_decorations } from './script_decorations'
-import { TypeSignatureCompletionProvider, FunctionBodyCompletionProvider, TheoryStructureCompletionProvider, ProofOutlineCompletionProvider, ProofStateCompletionProvider, ByDedentCompletionProvider } from './function_completion'
+import { TypeSignatureCompletionProvider, FunctionBodyCompletionProvider, TheoryStructureCompletionProvider, ProofOutlineCompletionProvider, ProofStateCompletionProvider, ByDedentCompletionProvider, AlsoHaveCompletionProvider } from './function_completion'
 
 
 let last_caret_update: lsp.Caret_Update = {}
@@ -361,6 +361,7 @@ export async function activate(context: ExtensionContext)
         const functionBodyProvider = new FunctionBodyCompletionProvider();
         const theoryStructureProvider = new TheoryStructureCompletionProvider();
         const byDedentProvider = new ByDedentCompletionProvider();
+        const alsoHaveProvider = new AlsoHaveCompletionProvider();
 
         context.subscriptions.push(
           languages.registerCompletionItemProvider(
@@ -408,6 +409,22 @@ export async function activate(context: ExtensionContext)
           languages.registerCompletionItemProvider(
             { scheme: 'file', language: 'isabelle' },
             proofStateProvider
+          ),
+          // By dedent completion (reduce indentation after 'by')
+          languages.registerCompletionItemProvider(
+            { scheme: 'file', language: 'isabelle' },
+            byDedentProvider,
+            '\n'  // Trigger on newline after 'by'
+          ),
+          languages.registerCompletionItemProvider(
+            { scheme: 'file', language: 'isabelle' },
+            byDedentProvider
+          ),
+          // Also have completion (suggest 'have "… = "' after 'also ')
+          languages.registerCompletionItemProvider(
+            { scheme: 'file', language: 'isabelle' },
+            alsoHaveProvider,
+            ' '  // Trigger on space after 'also'
           )
         )
 
