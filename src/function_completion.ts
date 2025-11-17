@@ -340,10 +340,14 @@ export class TheoryStructureCompletionProvider implements CompletionItemProvider
 
   /**
    * Extract filename without .thy extension from file path
+   * Handles both Unix-style (/) and Windows-style (\) paths
    */
   private extractFileName(filePath: string): string | null {
+    // Determine path separator: if path starts with /, use Unix style; otherwise Windows style
+    const separator = filePath.startsWith('/') ? '/' : '\\';
+    
     // Extract the base name from the path
-    const pathParts = filePath.split('/');
+    const pathParts = filePath.split(separator);
     const fileName = pathParts[pathParts.length - 1];
 
     // Remove .thy extension if present
