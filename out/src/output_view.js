@@ -155,7 +155,8 @@ class Output_View_Provider {
                 continue;
             }
             // Detect proof state
-            if (trimmedLine.startsWith('proof (prove)') || trimmedLine.startsWith('goal (')) {
+            const isProofLine = /^proof\s*\(.*\)/i.test(trimmedLine);
+            if (isProofLine || trimmedLine.startsWith('goal (')) {
                 currentSection = 'proof';
                 proofLines.push(line);
                 continue;

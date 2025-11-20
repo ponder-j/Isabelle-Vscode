@@ -15,8 +15,8 @@ import * as decorations from './decorations'
 import * as preview_panel from './preview_panel'
 import * as lsp from './lsp'
 import * as state_panel from './state_panel'
-import { Uri, TextEditor, ViewColumn, Selection, Position, ExtensionContext, workspace, window,
-  commands, ProgressLocation, MarkdownString, languages } from 'vscode'
+import { Uri, TextEditor, ViewColumn, Selection, Position, Range, ExtensionContext, workspace, window,
+  commands, ProgressLocation, MarkdownString, languages, WorkspaceEdit } from 'vscode'
 import { LanguageClient, LanguageClientOptions, ServerOptions } from 'vscode-languageclient/node'
 import { Output_View_Provider } from './output_view'
 import { register_script_decorations } from './script_decorations'
@@ -257,7 +257,7 @@ export async function activate(context: ExtensionContext)
               await provider.update_content(params.content);
 
               const content = params.content;
-              
+
               // Extract proof outline if present (priority 1)
               if (content && content.includes('Proof outline with cases:')) {
                 const match = content.match(/Proof outline with cases:\s*([\s\S]*?)(?=\n\n|\n*$)/);
@@ -265,20 +265,23 @@ export async function activate(context: ExtensionContext)
                   // Associate the proof outline with the last known caret position
                   proofOutlineProvider.updateProofOutline(match[1].trim(), last_caret_update);
                 }
+              } else if (content) {
+                // Clear proof outline cache if no proof outline is present
+                proofOutlineProvider.updateProofOutline(null);
               }
-              
+
               // Extract goal for fix/assume completion (priority 2)
               // This is also sent via dynamic_output_type, not state_output_type
               if (content && content.includes('goal (')) {
                 console.log('[ProofState] Found goal in dynamic output');
                 const goalMatch = content.match(/goal\s*\([^)]*\):\s*([\s\S]*?)(?=\n\n|$)/);
                 console.log('[ProofState] Goal match found:', !!goalMatch);
-                
+
                 if (goalMatch && goalMatch[1]) {
                   const goalContent = goalMatch[1].trim();
                   console.log('[ProofState] Extracted goal (first 200 chars):', goalContent.substring(0, 200));
                   console.log('[ProofState] Caret position:', last_caret_update);
-                  
+
                   // Store goal with current caret position
                   proofStateProvider.updateGoal(goalContent, last_caret_update);
                   console.log('[ProofState] Goal cached successfully');
@@ -427,6 +430,63 @@ export async function activate(context: ExtensionContext)
             ' '  // Trigger on space after 'also'
           )
         )
+
+
+    /* symbol conversion */
+
+    async function convertSymbolsToUnicode() {
+      const editor = window.activeTextEditor;
+      if (!editor || editor.document.languageId !== 'isabelle') {
+        window.showWarningMessage('Please open an Isabelle (.thy) file first');
+        return;
+      }
+
+      try {
+        // Load symbol mappings from snippets file
+        const snippetsPath = context.asAbsolutePath('snippets/isabelle-snippets');
+        const snippetsContent = await workspace.fs.readFile(Uri.file(snippetsPath));
+        const symbolMap: { [key: string]: string } = JSON.parse(snippetsContent.toString());
+
+        // Get document text
+        const document = editor.document;
+        const fullText = document.getText();
+
+        // Replace all symbols
+        let convertedText = fullText;
+        let replacementCount = 0;
+
+        for (const [isabelleSymbol, unicode] of Object.entries(symbolMap)) {
+          const regex = new RegExp(isabelleSymbol.replace(/\\/g, '\\\\'), 'g');
+          const matches = convertedText.match(regex);
+          if (matches) {
+            replacementCount += matches.length;
+            convertedText = convertedText.replace(regex, unicode);
+          }
+        }
+
+        if (replacementCount > 0) {
+          // Apply the changes
+          const edit = new WorkspaceEdit();
+          const fullRange = new Range(
+            document.positionAt(0),
+            document.positionAt(fullText.length)
+          );
+          edit.replace(document.uri, fullRange, convertedText);
+          await workspace.applyEdit(edit);
+
+          window.showInformationMessage(`Converted ${replacementCount} symbol(s) to Unicode`);
+        } else {
+          window.showInformationMessage('No Isabelle symbols found to convert');
+        }
+      } catch (error) {
+        window.showErrorMessage(`Failed to convert symbols: ${error}`);
+      }
+    }
+
+    context.subscriptions.push(
+      commands.registerCommand('isabelle.convert-symbols', convertSymbolsToUnicode)
+    );
+
 
         /* spell checker */
 

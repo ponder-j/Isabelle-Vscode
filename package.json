@@ -1,7 +1,7 @@
 {
     "name": "isabelle2025",
-    "displayName": "Isabelle/VSCode",
-    "description": "Isabelle/VSCode Prover IDE",
+    "displayName": "Isabelle2025",
+    "description": "Isabelle Prover IDE(unofficial)",
     "keywords": [
         "theorem prover",
         "formalized mathematics",
@@ -10,7 +10,7 @@
         "document preparation"
     ],
     "icon": "isabelle.png",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "publisher": "ponder-j",
     "license": "MIT",
     "repository": {
@@ -72,6 +72,12 @@
                 }
             },
             {
+                "command": "isabelle.convert-symbols",
+                "title": "Convert Symbols to Unicode",
+                "category": "Isabelle",
+                "icon": "$(pass-filled)"
+            },
+            {
                 "command": "isabelle.include-word",
                 "title": "Include word",
                 "category": "Isabelle"
@@ -127,6 +133,11 @@
                 {
                     "when": "editorLangId == bibtex",
                     "command": "isabelle.preview-split",
+                    "group": "navigation"
+                },
+                {
+                    "when": "editorLangId == isabelle",
+                    "command": "isabelle.convert-symbols",
                     "group": "navigation"
                 }
             ],

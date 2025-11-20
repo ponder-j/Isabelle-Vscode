@@ -233,6 +233,10 @@ async function activate(context) {
                             proofOutlineProvider.updateProofOutline(match[1].trim(), last_caret_update);
                         }
                     }
+                    else if (content) {
+                        // Clear proof outline cache if no proof outline is present
+                        proofOutlineProvider.updateProofOutline(null);
+                    }
                     // Extract goal for fix/assume completion (priority 2)
                     // This is also sent via dynamic_output_type, not state_output_type
                     if (content && content.includes('goal (')) {
@@ -332,6 +336,49 @@ async function activate(context) {
             // Also have completion (suggest 'have "… = "' after 'also ')
             vscode_1.languages.registerCompletionItemProvider({ scheme: 'file', language: 'isabelle' }, alsoHaveProvider, ' ' // Trigger on space after 'also'
             ));
+            /* symbol conversion */
+            async function convertSymbolsToUnicode() {
+                const editor = vscode_1.window.activeTextEditor;
+                if (!editor || editor.document.languageId !== 'isabelle') {
+                    vscode_1.window.showWarningMessage('Please open an Isabelle (.thy) file first');
+                    return;
+                }
+                try {
+                    // Load symbol mappings from snippets file
+                    const snippetsPath = context.asAbsolutePath('snippets/isabelle-snippets');
+                    const snippetsContent = await vscode_1.workspace.fs.readFile(vscode_1.Uri.file(snippetsPath));
+                    const symbolMap = JSON.parse(snippetsContent.toString());
+                    // Get document text
+                    const document = editor.document;
+                    const fullText = document.getText();
+                    // Replace all symbols
+                    let convertedText = fullText;
+                    let replacementCount = 0;
+                    for (const [isabelleSymbol, unicode] of Object.entries(symbolMap)) {
+                        const regex = new RegExp(isabelleSymbol.replace(/\\/g, '\\\\'), 'g');
+                        const matches = convertedText.match(regex);
+                        if (matches) {
+                            replacementCount += matches.length;
+                            convertedText = convertedText.replace(regex, unicode);
+                        }
+                    }
+                    if (replacementCount > 0) {
+                        // Apply the changes
+                        const edit = new vscode_1.WorkspaceEdit();
+                        const fullRange = new vscode_1.Range(document.positionAt(0), document.positionAt(fullText.length));
+                        edit.replace(document.uri, fullRange, convertedText);
+                        await vscode_1.workspace.applyEdit(edit);
+                        vscode_1.window.showInformationMessage(`Converted ${replacementCount} symbol(s) to Unicode`);
+                    }
+                    else {
+                        vscode_1.window.showInformationMessage('No Isabelle symbols found to convert');
+                    }
+                }
+                catch (error) {
+                    vscode_1.window.showErrorMessage(`Failed to convert symbols: ${error}`);
+                }
+            }
+            context.subscriptions.push(vscode_1.commands.registerCommand('isabelle.convert-symbols', convertSymbolsToUnicode));
             /* spell checker */
             language_client.start().then(() => {
                 context.subscriptions.push(vscode_1.commands.registerCommand("isabelle.include-word", uri => language_client.sendNotification(lsp.include_word_type)), vscode_1.commands.registerCommand("isabelle.include-word-permanently", uri => language_client.sendNotification(lsp.include_word_permanently_type)), vscode_1.commands.registerCommand("isabelle.exclude-word", uri => language_client.sendNotification(lsp.exclude_word_type)), vscode_1.commands.registerCommand("isabelle.exclude-word-permanently", uri => language_client.sendNotification(lsp.exclude_word_permanently_type)), vscode_1.commands.registerCommand("isabelle.reset-words", uri => language_client.sendNotification(lsp.reset_words_type)));
