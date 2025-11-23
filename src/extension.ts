@@ -92,6 +92,50 @@ function isabelle_options(args: Args): string[]
 
 export async function activate(context: ExtensionContext)
 {
+  /* Copy snippets to workspace .vscode folder */
+
+  async function setupWorkspaceSnippets() {
+    // Only setup if there's a workspace folder
+    if (!workspace.workspaceFolders || workspace.workspaceFolders.length === 0) {
+      return;
+    }
+
+    try {
+      const workspaceRoot = workspace.workspaceFolders[0].uri;
+      const vscodeDir = Uri.joinPath(workspaceRoot, '.vscode');
+      const targetSnippetsFile = Uri.joinPath(vscodeDir, 'isabelle.code-snippets');
+
+      // Check if snippets file already exists
+      try {
+        await workspace.fs.stat(targetSnippetsFile);
+        // File exists, don't overwrite
+        return;
+      } catch {
+        // File doesn't exist, proceed with copy
+      }
+
+      // Create .vscode directory if it doesn't exist
+      try {
+        await workspace.fs.createDirectory(vscodeDir);
+      } catch {
+        // Directory might already exist, that's fine
+      }
+
+      // Copy snippets file from extension to workspace
+      const sourceSnippetsFile = Uri.file(
+        context.asAbsolutePath('snippets/isabelle.code-snippets')
+      );
+
+      await workspace.fs.copy(sourceSnippetsFile, targetSnippetsFile, { overwrite: false });
+      console.log('Isabelle snippets copied to workspace .vscode folder');
+    } catch (error) {
+      console.error('Failed to setup workspace snippets:', error);
+    }
+  }
+
+  // Setup snippets on activation
+  await setupWorkspaceSnippets();
+
   /* server */
 
   try {
