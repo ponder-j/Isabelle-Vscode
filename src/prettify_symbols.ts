@@ -42,6 +42,9 @@ export class PrettifySymbolsProvider {
                     this.adjustCursorPosition(event.textEditor);
                     this.updateDecorations(event.textEditor);
                 }
+            }),
+            vscode.commands.registerTextEditorCommand('isabelle.deleteLeftSymbol', (editor) => {
+                this.handleDeleteLeft(editor);
             })
         );
 
@@ -53,6 +56,53 @@ export class PrettifySymbolsProvider {
     private loadConfiguration() {
         const config = vscode.workspace.getConfiguration('isabelle');
         this.revealMode = config.get<'cursor' | 'selection'>('prettifySymbolsMode', 'selection');
+    }
+
+    private async handleDeleteLeft(editor: vscode.TextEditor) {
+        // Only handle in selection mode with valid regex
+        if (this.revealMode !== 'selection' || !this.regex) {
+            await vscode.commands.executeCommand('deleteLeft');
+            return;
+        }
+
+        const selection = editor.selection;
+
+        // If there's a non-empty selection, use default behavior
+        if (!selection.isEmpty) {
+            await vscode.commands.executeCommand('deleteLeft');
+            return;
+        }
+
+        const cursor = selection.active;
+        const line = editor.document.lineAt(cursor.line);
+        const text = line.text;
+
+        // Check if cursor is at the right edge of a symbol
+        let match;
+        this.regex.lastIndex = 0;
+        let foundSymbol = false;
+
+        while ((match = this.regex.exec(text))) {
+            const startCol = match.index;
+            const endCol = match.index + match[0].length;
+
+            // If cursor is exactly at the right edge of a symbol
+            if (cursor.character === endCol) {
+                foundSymbol = true;
+                // Delete the entire symbol
+                const range = new vscode.Range(
+                    new vscode.Position(cursor.line, startCol),
+                    new vscode.Position(cursor.line, endCol)
+                );
+                await editor.edit(editBuilder => {
+                    editBuilder.delete(range);
+                });
+                return;
+            }
+        }
+
+        // If not at symbol edge, use default delete behavior
+        await vscode.commands.executeCommand('deleteLeft');
     }
 
     private async loadSymbols(context: vscode.ExtensionContext) {

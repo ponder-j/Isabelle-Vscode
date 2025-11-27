@@ -117,6 +117,18 @@
                 "command": "isabelle.reset-words",
                 "title": "Reset non-permanent words",
                 "category": "Isabelle"
+            },
+            {
+                "command": "isabelle.deleteLeftSymbol",
+                "title": "Delete Left (Symbol-aware)",
+                "category": "Isabelle"
+            }
+        ],
+        "keybindings": [
+            {
+                "command": "isabelle.deleteLeftSymbol",
+                "key": "backspace",
+                "when": "editorTextFocus && !editorReadonly && (editorLangId == isabelle || editorLangId == isabelle-ml)"
             }
         ],
         "menus": {
